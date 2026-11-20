@@ -1,0 +1,68 @@
+
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = 'vhvinayak/zomato-clone'
+        DOCKER_CREDENTIALS = 'dockerhub-credentials'
+}
+
+    stages {
+
+        stage('Git Checkout') {
+            steps {
+                echo 'Cloning source code...'
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building React application and Docker image...'
+                sh 'docker build -t $DOCKER_IMAGE:$BUILD_NUMBER .'
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: "${DOCKER_CREDENTIALS}",
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                sh '''
+                    docker push $DOCKER_IMAGE:$BUILD_NUMBER
+                    docker tag $DOCKER_IMAGE:$BUILD_NUMBER $DOCKER_IMAGE:latest
+                    docker push $DOCKER_IMAGE:latest
+                '''
+            }
+        }
+
+        stage('Cleanup') {
+            steps {
+                sh '''
+                    docker logout
+                    docker rmi $DOCKER_IMAGE:$BUILD_NUMBER $DOCKER_IMAGE:latest || true
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Docker image successfully pushed to Docker Hub!'
+        }
+        failure {
+            echo 'Pipeline failed. Check the Jenkins console output.'
+        }
+    }
+}
